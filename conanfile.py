@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from conans.client.build.cppstd_flags import available_cppstd_versions, cppstd_flag
 from conans.model.conan_generator import Generator
 from conans import ConanFile, tools, load
 import glob
@@ -69,6 +70,7 @@ class boost(Generator):
                 .replace("{{{toolset_version}}}", self.b2_toolset_version) \
                 .replace("{{{toolset_exec}}}", self.b2_toolset_exec) \
                 .replace("{{{libcxx}}}", self.b2_libcxx) \
+                .replace("{{{cppstd}}}", self.b2_cppstd) \
                 .replace("{{{libpath}}}", self.b2_icu_lib_paths) \
                 .replace("{{{arch_flags}}}", self.b2_arch_flags) \
                 .replace("{{{isysroot}}}", self.b2_isysroot) \
@@ -358,18 +360,33 @@ class boost(Generator):
     @property
     def b2_libcxx(self):
         if self.b2_toolset == 'gcc' and self.b2_os != 'android':
-            if str(self.settings.compiler.libcxx) == 'libstdc++11':
-                return '<cxxflags>-std=c++11 <linkflags>-std=c++11'
-        elif self.b2_toolset == 'clang' and self.b2_os != 'android':
-            if str(self.settings.compiler.libcxx) == 'libc++':
-                return '<cxxflags>-stdlib=libc++ <linkflags>-stdlib=libc++'
-            elif str(self.settings.compiler.libcxx) == 'libstdc++11':
-                return '<cxxflags>-stdlib=libstdc++ <linkflags>-stdlib=libstdc++ <cxxflags>-std=c++11 <linkflags>-std=c++11'
+            if self.settings.compiler.libcxx == 'libstdc++11':
+                return '<define>_GLIBCXX_USE_CXX11_ABI=1'
             else:
-                return '<cxxflags>-stdlib=libstdc++ <linkflags>-stdlib=libstdc++'
+                return '<define>_GLIBCXX_USE_CXX11_ABI=0'
+        elif self.b2_toolset == 'clang' and self.b2_os != 'android':
+            if self.settings.compiler.libcxx == 'libc++':
+                return '<cxxflags>-stdlib=libc++ <linkflags>-stdlib=libc++'
+            elif self.settings.compiler.libcxx == 'libstdc++11':
+                return '<cxxflags>-stdlib=libstdc++ <linkflags>-stdlib=libstdc++ <define>_GLIBCXX_USE_CXX11_ABI=1'
+            else:
+                return '<cxxflags>-stdlib=libstdc++ <linkflags>-stdlib=libstdc++ <define>_GLIBCXX_USE_CXX11_ABI=0'
         return ''
 
     _python_dep = "python_dev_config"
+
+    @property
+    def b2_cppstd(self):
+        # We try to turn on the most modern language standard that any given
+        # compiler version supports.
+        c = self.settings.compiler
+        v = str(self.settings.compiler.version)
+        stds = available_cppstd_versions(c, v)
+        flag = cppstd_flag(c, v, stds[-1])
+        if flag is not None:
+            return '<cxxflags>%s <linkflags>%s' % (flag, flag)
+        else:
+            return ''
 
     @property
     def b2_python_exec(self):
